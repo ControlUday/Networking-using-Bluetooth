@@ -1,0 +1,260 @@
+package sift;
+
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.bluetooth.DiscoveryAgent;
+import javax.bluetooth.LocalDevice;
+import javax.bluetooth.UUID;
+import javax.microedition.io.Connector;
+import javax.microedition.io.StreamConnection;
+import javax.microedition.io.StreamConnectionNotifier;
+import javax.swing.ImageIcon;
+
+/**
+* A class that demonstrates Bluetooth communication between server mode PC and
+* client mode device through serial port profile.
+*
+* @see <a href="http://sourceforge.net/projects/bluecove/">BlueCove - JSR-82
+*      implementation</a>
+*/
+public class PCServerCOMM {
+
+    /*-
+     * ================
+     * Bluetooth Server
+     * ================
+     *
+     * This example application is a straighforward implementation of
+     * a bluetooth server.
+     *
+     *
+     * Usage
+     * =====
+     *
+     * Start the program. Events are logged by printing them out with standard
+     * output stream. Once the server is up and ready to accept connections,
+     * connect to server with client.
+     *
+     *
+     * How it Works
+     * ============
+     *
+     * The application starts a loop to wait for a new connection. After a new
+     * connection is reseived the connection is handled. In the handling
+     * operation few tokens and end token is written to connection stream.
+     * Each read token is logged to standard output. After handling session
+     * the loop continues by waiting for a new connection.
+     *
+     */
+
+    /*-
+     *
+     * ---- Bluetooth attributes ----
+     */
+
+    // serial port profile
+    protected String UUID = new UUID("1101", true).toString();
+    protected int discoveryMode = DiscoveryAgent.GIAC; // no paring needed
+
+    public static InputStream in;
+    public static OutputStream out;
+    private static boolean ServerRun = true;
+    Image aa;
+    MOBILEOR_GUI frame;
+    /*-
+     *
+     * ---- Connection handling attributes ----
+     */
+    protected int endToken = 255;
+
+    public PCServerCOMM(MOBILEOR_GUI frame) {
+
+        this.frame = frame;
+        ServerRun = true;
+
+        try {
+            LocalDevice device = LocalDevice.getLocalDevice();
+            device.setDiscoverable(DiscoveryAgent.GIAC);
+
+            String url = "btspp://localhost:" + UUID + ";name=PCServerCOMM";
+
+            log("Create server by uri: " + url);
+            StreamConnectionNotifier notifier = (StreamConnectionNotifier) Connector.open(url);
+
+            serverLoop(notifier);
+
+        } catch (Throwable e) {
+            log(e);
+        }
+    }
+
+    private void serverLoop(final StreamConnectionNotifier notifier) {
+        Thread handler = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (ServerRun) { // infinite loop to accept connections.
+
+                        log("Waiting for connection...");
+                        handleConnection(notifier.acceptAndOpen());
+                    }
+                } catch (Exception e) {
+                    log(e);
+                }
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException ex) {
+                    Logger.getLogger(PCServerCOMM.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        };
+        handler.start();
+    }
+
+    private void handleConnection(StreamConnection conn) throws IOException {
+        out = conn.openOutputStream();
+        in = conn.openInputStream();
+        startReadThread(in);
+        log("Connection found...");
+    /*
+    try { // to write some tokens through the bluetooth link
+    int[] tokens = new int[] { 1, 3, 5, 7, endToken };
+    for (int i = 0; i < tokens.length; i++) {
+    out.write(tokens[i]);
+    out.flush();
+    log("write:" + tokens[i]);
+    // wait a sec before next write.
+    Thread.sleep(1 * 1000);
+    }
+    } catch (Exception e) {
+    log(e);
+    } finally {
+    log("Close connection.");
+    if (conn != null) {
+    try {
+    conn.close();
+    } catch (IOException e) {
+    }
+    }
+    }
+     * */
+    }
+
+    private void startReadThread(final InputStream in) {
+
+        Thread reader = new Thread() {
+
+            @Override
+            public void run() {
+                FileOutputStream f1 = null;
+                // System.out.println("Image data");
+                File directory = new File("C:/Image/");
+                String path = "image/image.png";
+                String image = "";
+
+
+                try {
+                    f1 = new FileOutputStream(path,false);
+                } catch (FileNotFoundException ex) {
+                    Logger.getLogger(PCServerCOMM.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                byte[] s = new byte[512];
+                boolean falg = true;
+                log("Waiting for image data");
+                try {
+                    while (true) {
+
+                        int r = in.read(s);
+
+                        if (r != -1) {
+                            falg = false;
+
+                            try {
+
+
+                                //s=Base64.decode(new String(s).intern());
+                                //               image = image + new String(s,0,r);
+                                f1.write(s, 0, r);
+                                f1.flush();
+                            } catch (IOException e) {
+                                System.out.println("Problems creating the file");
+                            }
+
+                        }
+                        if (!falg && (r < s.length)) {
+                            //         System.out.println("Frame !!!");
+                            f1.flush();
+                            f1.close();                       
+                            aa = new ImageIcon(path).getImage();
+                            new FrameImage(aa, 1);
+
+                            SIFT sift = new SIFT(path, "scale2.jpg", "welcome");
+                            frame.setImg(aa);
+                            frame.repaint();
+                            BufferedImage buff = new BufferedImage(aa.getWidth(null), aa.getHeight(null), BufferedImage.TYPE_INT_RGB);
+    //                        buff.createGraphics().drawImage(sift.oriented_Image(), 0, 0, null);
+      //                      OrientationForm orientionResult = new OrientationForm(buff);
+        //                    orientionResult.showOrientationResult();
+                            MOBILEOR_GUI.AppendTostatus(sift.getATree().getMatchingInfo());
+                            //    setNearestImages(sift.getNearest_5_imgs());
+               //             frame.createNearestWindow(sift.getNearest_5_imgs(), orientionResult);
+                 //           frame.getDisplayNearest().setSize(frame.getDesktopWidth(), 200);
+                   //         frame.getDisplayNearest().setLocation(0, orientionResult.getHeight() + 5);
+                     //       frame.getDesktop().add(frame.getDisplayNearest());
+
+                            break;
+                        }
+                    }
+                } catch (Throwable e) {
+                    log(e);
+
+                } finally {
+                    if (in != null) {
+                        try {
+                            log("Image transfering done...");
+                            in.close();
+
+                        } catch (IOException e) {
+                        }
+                    }
+                }
+            }
+        };
+        reader.start();
+    }
+
+    /*-
+     *   -------  Utility section -------
+     */
+    private void log(String msg) {
+
+        MOBILEOR_GUI.AppendTostatus(msg + "\n");
+    }
+
+    private void log(Throwable e) {
+        log(e.getMessage());
+
+        e.printStackTrace();
+    }
+
+    public Image getImage() {
+        return aa;
+    }
+
+    public static void StopServer() {
+        ServerRun = false;
+    }
+    /*-
+     *   -------  Bootstrap section, i.e., main method -------
+     */
+}
